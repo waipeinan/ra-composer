@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RA Application — Short Text Composer</title>
+  <!--
+	Single‑file HTML app for writing several short texts with a live character counter.
+	Behaviour requested:
+	  • Prominent character count per text.
+	  • Counter turns ORANGE at ≥820 chars.
+	  • Counter turns RED when >900 chars.
+	Extras for comfort:
+	  • Six sections by default (add/remove allowed).
+	  • LocalStorage autosave (no accidental loss).
+	  • Copy/Clear per section, Export All (.txt) and Print.
+	  • Monospace option toggle for steadier tracking.
+	  • High‑contrast, keyboard accessible.
+  -->
+  <style>
+	:root{
+	  --bg: #0f1115;
+	  --panel: #151821;
+	  --ink: #e7eaf3;
+	  --muted: #9aa3b2;
+	  --ok: #5fd38b;
+	  --warn: #ff9f1a; /* ORANGE at ≥820 */
+	  --bad: #ff4d4f;  /* RED over 900    */
+	  --link: #8ab4ff;
+	  --accent: #6ea8fe;
+	  --border: #2a2f3a;
+	  --focus: #7dd3fc;
+	}
+	html, body { height: 100%; }
+	body{
+	  margin:0; background:var(--bg); color:var(--ink);
+	  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+	}
+	header{
+	  position: sticky; top:0; z-index: 5;
+	  background: linear-gradient(180deg, rgba(21,24,33,0.98), rgba(21,24,33,0.92));
+	  border-bottom:1px solid var(--border);
+	  backdrop-filter: blur(8px);
+	}
+	.wrap{ max-width: 1100px; margin:0 auto; padding: 16px; }
+
+	.title{ display:flex; align-items:center; gap:14px; }
+	.title h1{ font-size: 20px; margin: 0; letter-spacing: .3px; }
+	.title small{ color: var(--muted); }
+
+	.toolbar{
+	  display:flex; flex-wrap: wrap; gap:10px; margin-top:12px;
+	}
+	.toolbar button, .toolbar a, .small-btn{
+	  background: #1b2030; color: var(--ink); border:1px solid var(--border);
+	  padding: 8px 12px; border-radius:12px; cursor:pointer; font-weight:600; font-size: 14px;
+	}
+	.toolbar button:hover, .small-btn:hover{ background:#232938; }
+	.toolbar label{ display:flex; align-items:center; gap:8px; color: var(--muted); }
+
+	main{ padding: 20px 0 80px; }
+
+	.grid{
+	  display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+	  gap:16px; align-items: start;
+	}
+
+	.card{
+	  background: var(--panel); border:1px solid var(--border); border-radius:16px;
+	  box-shadow: 0 10px 20px rgba(0,0,0,.3);
+	  display:flex; flex-direction: column; min-height: 260px;
+	}
+	.card header{
+	  position: static; background: transparent; border-bottom:1px dashed var(--border);
+	}
+	.card .top{ display:flex; justify-content: space-between; align-items: center; padding: 12px 14px; }
+	.name{ display:flex; align-items:center; gap:10px; }
+	.name input{
+	  background: transparent; color: var(--ink); border:none; outline:none; font-weight:700;
+	  width: 14ch; border-bottom:1px dashed transparent; padding:4px 2px; border-radius:6px;
+	}
+	.name input:focus{ border-bottom-color: var(--focus); background: #10131a; }
+
+	.counter{
+	  font-variant-numeric: tabular-nums; font-weight:800; font-size: 20px;
+	  padding: 4px 8px; border-radius: 10px; min-width: 7ch; text-align: right;
+	  border:1px solid var(--border);
+	}
+	.counter.ok{ color: var(--ok); }
+	.counter.warn{ color: var(--warn); }
+	.counter.bad{ color: var(--bad); }
+
+	textarea{
+	  width:100%; flex:1; resize: vertical; min-height: 180px; max-height: 50vh;
+	  background: #0e1119; color: var(--ink); border:none; outline: none;
+	  padding: 14px; line-height: 1.5; border-radius: 0 0 16px 16px; font-size: 16px;
+	  border-top:1px dashed var(--border);
+	}
+	textarea.orange{ box-shadow: inset 0 0 0 2px var(--warn); }
+	textarea.red{ box-shadow: inset 0 0 0 2px var(--bad); }
+
+	.actions{
+	  display:flex; gap:8px; align-items:center; flex-wrap: wrap; padding: 8px 14px 12px;
+	}
+	.small-btn{ font-size: 12px; padding:6px 10px; }
+
+	footer{ position: fixed; bottom: 10px; right: 10px; left: 10px; pointer-events: none; }
+	.hint{
+	  max-width: 1100px; margin:0 auto; background: #0b0e14; color: var(--muted);
+	  border:1px dashed var(--border); border-radius: 12px; padding:8px 12px; font-size: 13px;
+	  pointer-events: auto;
+	}
+	.hint strong{ color: var(--ink); }
+
+	@media print{
+	  header, .toolbar, .actions, footer, .hint { display: none !important; }
+	  body{ background: #fff; color: #000; }
+	  .card{ box-shadow:none; border:1px solid #000; }
+	  textarea{ border:none; box-shadow:none; }
+	}
+  </style>
+</head>
+<body>
+  <header>
+	<div class="wrap">
+	  <div class="title">
+		<h1>RA Application — Short Text Composer</h1>
+		<small>Write each text (max 900 chars). Counter turns <span style="color:var(--warn)">orange</span> at 820 and <span style="color:var(--bad)">red</span> over 900.</small>
+	  </div>
+	  <div class="toolbar" role="toolbar" aria-label="Page controls">
+		<button id="addBtn" title="Add a new text card">＋ Add Section</button>
+		<button id="exportBtn" title="Download all sections as a .txt file">Export All</button>
+		<button id="printBtn" title="Print nicely">Print</button>
+		<label title="Use a monospace font for steadier tracking"><input type="checkbox" id="monoToggle"> Monospace</label>
+		<label title="Live counter across all sections (informational)"><input type="checkbox" id="totalToggle"> Show total characters</label>
+		<span id="grandTotal" style="display:none;color:var(--muted);font-weight:700;">Total: <span id="grandNum">0</span></span>
+	  </div>
+	</div>
+  </header>
+
+  <main class="wrap">
+	<div id="grid" class="grid" aria-live="polite"></div>
+  </main>
+
+  <footer>
+	<div class="hint">
+	  <strong>Tips:</strong> Use the Copy button to paste into application forms. Your work auto‑saves locally.
+	  Going over 900 is allowed here (to refine and trim), but the counter will turn red to warn you.
+	</div>
+  </footer>
+
+<script>
+(function(){
+  // Configurable thresholds
+  const WARN_AT = 820; // orange at ≥820
+  const LIMIT   = 900; // red above 900
+
+  const grid = document.getElementById('grid');
+  const addBtn = document.getElementById('addBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const printBtn = document.getElementById('printBtn');
+  const monoToggle = document.getElementById('monoToggle');
+  const totalToggle = document.getElementById('totalToggle');
+  const grandTotal = document.getElementById('grandTotal');
+  const grandNum = document.getElementById('grandNum');
+
+  // Local storage helpers (namespaced)
+  const KEY = 'ra_text_cards_v1';
+  function loadState(){
+	try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch(_) { return []; }
+  }
+  function saveState(cards){
+	try { localStorage.setItem(KEY, JSON.stringify(cards)); } catch(_) {}
+  }
+
+  // Card model: { id, name, text }
+  let cards = loadState();
+  if(cards.length === 0){
+	// Create six empty sections by default
+	for(let i=1;i<=6;i++) cards.push({ id: crypto.randomUUID(), name: `Section ${i}`, text: "" });
+	saveState(cards);
+  }
+
+  // Render all cards
+  function render(){
+	grid.innerHTML = '';
+	cards.forEach((c, idx) => grid.appendChild(cardView(c, idx)));
+	updateGrandTotal();
+  }
+
+  // Create a single card element
+  function cardView(card, index){
+	const div = document.createElement('section');
+	div.className = 'card';
+	div.dataset.id = card.id;
+
+	const h = document.createElement('div');
+	h.className = 'top';
+
+	const nameWrap = document.createElement('div');
+	nameWrap.className = 'name';
+
+	const nameInput = document.createElement('input');
+	nameInput.value = card.name || `Section ${index+1}`;
+	nameInput.placeholder = 'Section name';
+	nameInput.setAttribute('aria-label', 'Section name');
+
+	const counter = document.createElement('div');
+	counter.className = 'counter ok';
+	counter.textContent = '0';
+
+	nameWrap.appendChild(nameInput);
+
+	h.appendChild(nameWrap);
+	h.appendChild(counter);
+
+	const ta = document.createElement('textarea');
+	ta.value = card.text || '';
+	ta.spellcheck = true;
+	ta.setAttribute('aria-label', `${nameInput.value} text`);
+
+	const actions = document.createElement('div');
+	actions.className = 'actions';
+
+	const copyBtn = button('Copy');
+	const clearBtn = button('Clear');
+	const removeBtn = button('Remove');
+
+	actions.append(copyBtn, clearBtn, removeBtn);
+
+	// Append blocks
+	div.appendChild(h);
+	div.appendChild(actions);
+	div.appendChild(ta);
+
+	// Helpers: update counter + visuals
+	function applyCountUI(len){
+	  counter.textContent = len.toString();
+	  counter.classList.remove('ok','warn','bad');
+	  ta.classList.remove('orange','red');
+	  if(len > LIMIT){
+		counter.classList.add('bad');
+		ta.classList.add('red');
+	  } else if(len >= WARN_AT){
+		counter.classList.add('warn');
+		ta.classList.add('orange');
+	  } else {
+		counter.classList.add('ok');
+	  }
+	}
+
+	// Seed initial counter/colour
+	applyCountUI(ta.value.length);
+
+	// Events
+	nameInput.addEventListener('input', () => {
+	  const model = cards.find(x => x.id === card.id);
+	  if(model){ model.name = nameInput.value; saveState(cards); }
+	  ta.setAttribute('aria-label', `${nameInput.value} text`);
+	});
+
+	ta.addEventListener('input', () => {
+	  const len = ta.value.length;
+	  applyCountUI(len);
+	  const model = cards.find(x => x.id === card.id);
+	  if(model){ model.text = ta.value; saveState(cards); }
+	  updateGrandTotal();
+	});
+
+	copyBtn.addEventListener('click', async () => {
+	  try{
+		await navigator.clipboard.writeText(ta.value);
+		toast('Copied to clipboard');
+	  }catch(_){
+		// Fallback
+		ta.select(); document.execCommand('copy');
+		toast('Copied (fallback)');
+	  }
+	});
+
+	clearBtn.addEventListener('click', () => {
+	  if(confirm('Clear this section?')){
+		ta.value = '';
+		applyCountUI(0);
+		const model = cards.find(x => x.id === card.id);
+		if(model){ model.text = ''; saveState(cards); }
+		updateGrandTotal();
+	  }
+	});
+
+	removeBtn.addEventListener('click', () => {
+	  if(!confirm('Remove this section?')) return;
+	  cards = cards.filter(x => x.id !== card.id);
+	  saveState(cards);
+	  render();
+	});
+
+	return div;
+  }
+
+  // Utility: make a small button
+  function button(label){
+	const b = document.createElement('button');
+	b.className = 'small-btn';
+	b.type = 'button';
+	b.textContent = label;
+	return b;
+  }
+
+  // Toast (small inline message at footer)
+  let toastTimer = null;
+  function toast(msg){
+	let bar = document.querySelector('.hint');
+	if(bar){ bar.innerHTML = `<strong>${msg}</strong>`; }
+	clearTimeout(toastTimer);
+	toastTimer = setTimeout(()=>{
+	  if(bar){ bar.innerHTML = '<strong>Tips:</strong> Use the Copy button to paste into application forms. Your work auto‑saves locally.'; }
+	}, 1800);
+  }
+
+  // Add a new card
+  addBtn.addEventListener('click', () => {
+	const n = cards.length + 1;
+	cards.push({ id: crypto.randomUUID(), name: `Section ${n}`, text: '' });
+	saveState(cards);
+	render();
+  });
+
+  // Export all sections as a .txt file
+  exportBtn.addEventListener('click', () => {
+	const lines = cards.map((c, i) => {
+	  const name = (c.name || `Section ${i+1}`).trim();
+	  const text = (c.text || '').replace(/\r?\n/g, '\n');
+	  const len = (c.text || '').length;
+	  return `# ${name} (chars: ${len})\n${text}\n\n`;
+	}).join('\n');
+	const blob = new Blob([lines], { type:'text/plain;charset=utf-8' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url; a.download = 'RA_texts_export.txt'; a.click();
+	URL.revokeObjectURL(url);
+  });
+
+  // Print nicely
+  printBtn.addEventListener('click', () => window.print());
+
+  // Monospace toggle
+  monoToggle.addEventListener('change', (e) => {
+	document.body.style.setProperty('font-family', e.target.checked ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' : 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif');
+  });
+
+  // Grand total of characters across all sections
+  totalToggle.addEventListener('change', (e) => {
+	grandTotal.style.display = e.target.checked ? 'inline-flex' : 'none';
+	updateGrandTotal();
+  });
+  function updateGrandTotal(){
+	if(totalToggle.checked){
+	  const sum = cards.reduce((n, c) => n + (c.text ? c.text.length : 0), 0);
+	  grandNum.textContent = String(sum);
+	}
+  }
+
+  // Keyboard: Cmd/Ctrl + Enter adds a new card
+  document.addEventListener('keydown', (ev) => {
+	if((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter'){
+	  ev.preventDefault(); addBtn.click();
+	}
+  });
+
+  // Initial render
+  render();
+})();
+</script>
+</body>
+</html>
